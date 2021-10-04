@@ -101,8 +101,32 @@ namespace :shoryuken do
 
   desc 'Restart shoryuken'
   task :restart do
-    invoke! 'shoryuken:stop'
-    invoke! 'shoryuken:start'
+    on roles fetch(:shoryuken_role) do
+      within release_path do
+        pid_file = fetch(:shoryuken_pid)
+        if pid_file_exists?(pid_file)
+          pid_file_signal pid_file, 'USR1', quiet: true
+
+          print 'Waiting for shoryuken to shutdown...'
+          sleep 1 while pid_process_exists?(pid_file)
+          execute :rm, '-f', pid_file
+        end
+
+        unless pid_process_exists?(pid_file)
+          args = ['--daemon']
+          args.push "--pidfile '#{pid_file}'"
+          logfile = fetch(:shoryuken_log) and args.push "--logfile '#{logfile}'"
+          config = fetch(:shoryuken_config) and args.push "--config '#{config}'"
+          queues = Array(fetch(:shoryuken_queues)) and queues.each{|queue| args.push "--queue #{queue}" }
+          reqs = Array(fetch(:shoryuken_requires)) and reqs.each{|req| args.push "--require #{req}" }
+          options = fetch(:shoryuken_options) and args.push Array(options).join(' ')
+
+          with rails_env: fetch(:shoryuken_env) do
+            execute :bundle, :exec, :shoryuken, args.compact.join(' ')
+          end
+        end
+      end
+    end
   end
   
   desc 'Make the shoryuken process log detailed status information'
